@@ -36,6 +36,14 @@
                 <div class="card-content">
                     <h2>3Dアートコース 作品紹介</h2>
                     <p>メタ空間スタジオで制作された、没入感あふれる3Dアートの世界観をご覧ください。</p>
+
+                    <div class="local-file-upload">
+                        <p class="note">※動画ファイルが大きい場合、ローカルファイルを選択して再生できます</p>
+                        <label for="video-upload" class="upload-btn">
+                            動画ファイルを選択
+                        </label>
+                        <input type="file" id="video-upload" accept="video/mp4,video/webm" style="display: none;">
+                    </div>
                 </div>
             </article>
 
@@ -48,6 +56,21 @@
             <p>&copy; 2026 Sojo Meta Spatial Studio. All rights reserved.</p>
         </div>
     </footer>
+
+    <script>
+        document.getElementById('video-upload').addEventListener('change', function (event) {
+            const file = event.target.files[0];
+            const videoPlayer = document.querySelector('video');
+            const source = videoPlayer.querySelector('source');
+
+            if (file) {
+                const fileURL = URL.createObjectURL(file);
+                source.src = fileURL;
+                videoPlayer.load();
+                videoPlayer.play();
+            }
+        });
+    </script>
 </body>
 
 </html>
