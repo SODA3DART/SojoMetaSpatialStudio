@@ -26,16 +26,19 @@
     <main class="container">
         <section class="gallery">
             <article class="video-card">
-                <div class="video-wrapper">
-                    <video controls poster="" preload="metadata">
-                        <source src="SampleVideo/3D%E3%82%A2%E3%83%BC%E3%83%88%E3%82%B3%E3%83%BC%E3%82%B9%201.mp4"
-                            type="video/mp4">
-                        お使いのブラウザは動画タグに対応していません。
-                    </video>
+                <div class="video-wrapper" id="scene-container">
+                    <!-- Three.js Canvas will be injected here -->
+                    <div id="loading-overlay">
+                        <div class="spinner"></div>
+                        <p>Loading 3D Engine...</p>
+                    </div>
+                    <button id="start-vr-btn" class="vr-overlay-btn" style="display: none;">
+                        <span class="icon">📱</span> ジャイロ操作を開始
+                    </button>
                 </div>
                 <div class="card-content">
                     <h2>3Dアートコース 作品紹介</h2>
-                    <p>メタ空間スタジオで制作された、没入感あふれる3Dアートの世界観をご覧ください。</p>
+                    <p>メタ空間スタジオで制作された、没入感あふれる3Dアートの世界観をご覧ください。<br>ドラッグまたは端末を動かして視点を操作できます。</p>
 
                     <div class="local-file-upload">
                         <p class="note">※動画ファイルが大きい場合、ローカルファイルを選択して再生できます</p>
@@ -57,20 +60,153 @@
         </div>
     </footer>
 
-    <script>
-        document.getElementById('video-upload').addEventListener('change', function (event) {
-            const file = event.target.files[0];
-            const videoPlayer = document.querySelector('video');
-            const source = videoPlayer.querySelector('source');
+    <!-- Three.js Libraries -->
+    <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.154.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.154.0/examples/jsm/"
+            }
+        }
+    </script>
 
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { DeviceOrientationControls } from 'three/addons/controls/DeviceOrientationControls.js';
+
+        let camera, scene, renderer, controls;
+        let video, videoTexture;
+        let isDeviceOrientationActive = false;
+
+        const container = document.getElementById('scene-container');
+        const startVrBtn = document.getElementById('start-vr-btn');
+        const fileInput = document.getElementById('video-upload');
+        const loadingOverlay = document.getElementById('loading-overlay');
+
+        init();
+        animate();
+
+        function init() {
+            // Setup Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x111111);
+
+            // Setup Camera
+            camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+            camera.position.set(0, 0, 0.1); // Slightly offset to ensure we are inside
+
+            // Setup Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            container.appendChild(renderer.domElement);
+
+            // Setup Video Element (Hidden)
+            video = document.createElement('video');
+            video.crossOrigin = "anonymous";
+            video.loop = true;
+            video.muted = true; // Mute by default to allow autoplay
+            video.playsInline = true;
+            video.src = "SampleVideo/3D%E3%82%A2%E3%83%BC%E3%83%88%E3%82%B3%E3%83%BC%E3%82%B9%201.mp4";
+            video.load();
+
+            // Auto play attempt
+            video.play().then(() => {
+                loadingOverlay.style.display = 'none';
+            }).catch(e => {
+                console.log("Autoplay blocked, waiting for interaction");
+                loadingOverlay.querySelector('p').textContent = "Click to Start";
+                container.addEventListener('click', () => {
+                    video.play();
+                    video.muted = false;
+                    loadingOverlay.style.display = 'none';
+                }, { once: true });
+            });
+
+            // Create Video Texture
+            videoTexture = new THREE.VideoTexture(video);
+            videoTexture.colorSpace = THREE.SRGBColorSpace;
+
+            // Create Room (Box) Geometry
+            // Size 10x10x10, inverted by using BackSide material to view from inside
+            const geometry = new THREE.BoxGeometry(20, 10, 20); // Width, Height, Depth
+            const material = new THREE.MeshBasicMaterial({
+                map: videoTexture,
+                side: THREE.BackSide
+            });
+            const room = new THREE.Mesh(geometry, material);
+            scene.add(room);
+
+            // Initial Controls (Orbit for Desktop)
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableZoom = false;
+            controls.enablePan = false;
+            controls.rotateSpeed = -0.5; // Invert rotation for "looking around" feel
+
+            // Handle Resize
+            window.addEventListener('resize', onWindowResize);
+
+            // Check if mobile for VR button
+            if (isMobile()) {
+                startVrBtn.style.display = 'flex';
+                startVrBtn.addEventListener('click', enableDeviceOrientation);
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (controls) controls.update();
+            renderer.render(scene, camera);
+        }
+
+        function isMobile() {
+            return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        }
+
+        async function enableDeviceOrientation() {
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                // iOS 13+
+                try {
+                    const permissionState = await DeviceOrientationEvent.requestPermission();
+                    if (permissionState === 'granted') {
+                        activateOrientationControls();
+                    } else {
+                        alert('Permission denied');
+                    }
+                } catch (error) {
+                    console.error(error);
+                }
+            } else {
+                // Non-iOS or older devices
+                activateOrientationControls();
+            }
+        }
+
+        function activateOrientationControls() {
+            controls.dispose(); // Remove orbit controls
+            controls = new DeviceOrientationControls(camera);
+            isDeviceOrientationActive = true;
+            startVrBtn.style.display = 'none';
+        }
+
+        // Local File Handling
+        fileInput.addEventListener('change', function (event) {
+            const file = event.target.files[0];
             if (file) {
                 const fileURL = URL.createObjectURL(file);
-                source.src = fileURL;
-                videoPlayer.load();
-                videoPlayer.play();
+                video.src = fileURL;
+                video.load();
+                video.play();
             }
         });
     </script>
-</body>
 
 </html>
